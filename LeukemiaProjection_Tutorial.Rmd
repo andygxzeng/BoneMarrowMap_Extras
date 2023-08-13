@@ -3,9 +3,12 @@ title: "Leukemia Projections"
 output: html_notebook
 ---
 
-### Setup
+Here we will map an example dataset from three leukemias sequenced in our study.
+This tutorial will take approximately 10 minutes to run 
 
-```{r, }
+### Setup
+ 
+```{r}
 library(Seurat)
 library(tidyverse)
 library(symphony)
@@ -17,8 +20,11 @@ library(RColorBrewer)
 Install package from github
 
 ```{r}
+## install dependencies that are not on CRAN
 #BiocManager::install("AUCell")
 #devtools::install_github("jaredhuling/jcolors", force = TRUE) # dependency that is no longer on CRAN
+
+## install BoneMarrowMap package
 #devtools::install_github('andygxzeng/BoneMarrowMap', force = TRUE)
 library(BoneMarrowMap)
 ```
@@ -75,11 +81,12 @@ However, we cannot be confident in mapping T-ALL due to a lack of thymus-specifi
 
 
 As an example here, we are going to project scRNA-seq data from three diverse AML patients sequenced in our study. 
-  - pt_17844: MLL-AF9 translocation with a purely mature leukemia cell hierarchy
-  - pt_17746: NPM1c + DNMT3A + TET2 with a GMP-dominant leukemia cell hierarchy
-  - pt_30886: Complex Karyotype with a primitive leukemia cell hierarchy + extensive erythroid envolvement (acute erythroleukemia)
 
-Each patient was downsampled to 2500 cells to decrease runtime for this example. 
+* pt_17844: MLL-AF9 translocation with a purely mature leukemia cell hierarchy
+* pt_17746: NPM1c + DNMT3A + TET2 with a GMP-dominant leukemia cell hierarchy
+* pt_30886: Complex Karyotype with a primitive leukemia cell hierarchy + extensive erythroid involvement 
+
+Each patient sample was downsampled to 2500 cells to decrease runtime for this example. 
 
 ```{r}
 curl::curl_download('https://bonemarrowmap.s3.us-east-2.amazonaws.com/ExampleQuery_AML_scRNAseq.rds', 
@@ -132,13 +139,14 @@ patchwork::wrap_plots(QC_plots, ncol = 4, widths = c(0.8, 0.3, 0.8, 0.3))
 
 
 This important step identifies a subset of cells with high mapping error from the query dataset that are either:
-  1) not present within the reference, or
-  2) have poor QC metrics (low RNA counts and low transcriptional diversity)
+
+* not present within the reference, or
+* have poor QC metrics (low RNA counts and low transcriptional diversity)
 
 Sometimes, low quality cells may erroneously map to the orthochromatic erythroblast region as this cell type has very low transcriptional diversity. 
 These low quality query cells do not have hemoglobin expression and are in fact mis-mapped; they will be flagged by the QC filter and excluded from cell type assignments.
 
-**Please adjust the MAD.threshold (typically between 1 and 3) based on the distribution of your dataset to identify the outliers with low quality and high mapping error scores. This will improve your classifications and any downstream composition analysis**
+**Please adjust the MAD_threshold (typically between 1 and 3) based on the distribution of your dataset to identify the outliers with low quality and high mapping error scores. This will improve your classifications and any downstream composition analysis**
 
 
 ```{r}
@@ -147,7 +155,7 @@ These low quality query cells do not have hemoglobin expression and are in fact 
 ```
 
 Optionally, outlier cells with high mapping error can also be removed at this stage.
-For ease of integrating these mapped annotations with the rest of your analysis, we also choose to skip this step. If so, Final CellType and Pseudotime predictions will be assigned as NA for cells failing the mapping error QC threshold. 
+For ease of integrating these mapped annotations with the rest of your analysis, we can choose to skip this step. If so, Final CellType and Pseudotime predictions will be assigned as NA for cells failing the mapping error QC threshold. 
 
 
 ### Cell Type Assignments
@@ -159,7 +167,7 @@ This label transfer step will take longer, potentially around 10 minutes for ~10
 query <- predict_CellTypes(
   query_obj = query, 
   ref_obj = ref, 
-  initial_label = 'initial_CellType', # celltype assignments before mapping QC
+  initial_label = 'initial_CellType', # celltype assignments before filtering on mapping QC
   final_label = 'predicted_CellType'  # celltype assignments with map QC failing cells assigned as NA
 ) 
 
@@ -178,13 +186,12 @@ Since our Pseudotime KNN assignments are performed in UMAP space (more accurate 
 query <- predict_Pseudotime(
   query_obj = query, 
   ref_obj = ref, 
-  initial_label = 'initial_Pseudotime', 
-  final_label = 'predicted_Pseudotime'
+  initial_label = 'initial_Pseudotime',  # pseudotime assignments before filtering on mapping QC
+  final_label = 'predicted_Pseudotime'   # pseudotime assignments with map QC failing cells assigned as NA
 )
 
 # Visualize Hematopoietic Pseudotime in query data
-FeaturePlot(subset(query, mapping_error_QC == 'Pass'), 
-            features = c('predicted_Pseudotime'), split.by = 'Patient') & 
+FeaturePlot(subset(query, mapping_error_QC == 'Pass'), features = c('predicted_Pseudotime'), split.by = 'Patient') & 
   scale_color_gradientn(colors = rev(brewer.pal(11, 'RdBu')))
 ```
 
@@ -315,8 +322,7 @@ query <- score_Genesets_AUCell(query, genesets = AMLgenesets, nbatches = 1, ncor
 query@meta.data
 ```
 
-Using genes associated with functional LSC+ engraftment capacity (LSC104_Ng2016_UP) together with the LSPC-Quiescent signature help us to identify candidate LSCs within the data. It is no surprise that these are the most primitive cells earliest in Pseudotime. Note that this approach does not work for the MLL-AF9 samples wherein all leukemic cells are mature myeloid; in this context the MLL_LSC_Somervaille_2009_UP signature may help us identify functional "LSCs" capable of engraftment within the mature myeloid populations (typically late GMPs or Early ProMonocytes). 
-
+Using genes associated with functional LSC+ engraftment capacity (LSC104_Ng2016_UP) together with the LSPC-Quiescent signature help us to identify candidate LSCs within the data. 
 
 ```{r, fig.height=6, fig.width=12}
 FeaturePlot(subset(query, mapping_error_QC == 'Pass'), 
@@ -324,6 +330,17 @@ FeaturePlot(subset(query, mapping_error_QC == 'Pass'),
             split.by = 'Patient', max.cutoff = 'q99', min.cutoff = 'q5') & 
   scale_color_gradientn(colors = rev(brewer.pal(11, 'RdBu')))
 ```
+
+It is no surprise that these are the most primitive cells earliest in Pseudotime. Note that this approach does not work for the MLL-AF9 samples wherein all leukemic cells are mature myeloid; in this context the MLL_LSC_Somervaille_2009_UP signature may help us identify functional "LSCs" capable of engraftment within the mature myeloid populations (typically late GMPs or Early ProMonocytes). 
+
+```{r, fig.height=3, fig.width=12}
+FeaturePlot(subset(query, mapping_error_QC == 'Pass'), 
+            features = c('MLL_LSC_Somervaille2009_UP_AUC'), 
+            split.by = 'Patient', max.cutoff = 'q99', min.cutoff = 'q5') & 
+  scale_color_gradientn(colors = rev(brewer.pal(11, 'RdBu')))
+```
+
+As expected, ProMonocytes within the MLL-AF9 sample exhibit enrichment for the MLL_LSC_Somervaille_2009_UP, in line with the mature myeloid origin of this patient's disease.
 
 
 ### Save projection results
@@ -349,6 +366,10 @@ For downstream analysis, you can use the projected celltype labels to help annot
 Additional information from pseudotime projection and scoring of LSC-specific signatures can help identify candidate LSCs within the data. 
 
 Finally, for cohorts with many patients composition analysis can be performed to understand how leukemia cell hierarchies vary with patient characteristics and therapy response / relapse. I hope this tutorial was useful and feel free to comment with any questions you may have around projection of leukemia cells or downstream analysis.
+
+
+
+
 
 
 

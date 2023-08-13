@@ -3,9 +3,10 @@ title: "Bone Marrow Reference Map Projection Tutorial"
 output: html_notebook
 ---
 
+
 Here we will map an example dataset from Roy et al (Cell Rep 2019) comprising 12,245 CD34+ cells from fetal and adult bone marrow.
 Note that any human hematopoietic cells, regardless of tissue source or disease status, can be mapped to this reference.
-This tutorial will take approximately 10 minutes to run
+This tutorial will take approximately 10 minutes to run.
 
 ### Setup
 
@@ -20,11 +21,16 @@ library(patchwork)
 Install package from github
 
 ```{r}
-devtools::install_github('andygxzeng/BoneMarrowMap')
+## install dependencies that are not on CRAN
+#BiocManager::install("AUCell")
+#devtools::install_github("jaredhuling/jcolors") 
+
+## install BoneMarrowMap package
+#devtools::install_github('andygxzeng/BoneMarrowMap', force = TRUE)
 library(BoneMarrowMap)
 ```
-
-
+ 
+ 
 #### Download reference object and UMAP model
 
 Set projection folder, Download reference object and UMAP model
@@ -105,19 +111,25 @@ Now that the data is mapped, we will evaluate the mapping QC metrics and flag ce
 
 ```{r, fig.height=3, fig.width=10}
 # Run QC based on mapping error score, flag cells with mapping error >= 2.5 MADs above median
-query <- query %>% calculate_MappingError(., reference = ref, MAD.threshold = 2.5) 
+query <- query %>% calculate_MappingError(., reference = ref, MAD_threshold = 2.5) 
 
-plot_MappingErrorQC(query)
+# Get QC Plots
+QC_plots <- plot_MappingErrorQC(query)
+
+# Plot together - If this is too crowded, can also just call "QC_plots" aloneto display one by one
+patchwork::wrap_plots(QC_plots, ncol = 4, widths = c(0.8, 0.3, 0.8, 0.3))
 ```
 
+
 This important step identifies a subset of cells with high mapping error from the query dataset that are either:
-  1) not present within the reference, or
-  2) have poor QC metrics (low RNA counts and low transcriptional diversity)
+
+* not present within the reference, or
+* have poor QC metrics (low RNA counts and low transcriptional diversity)
 
 Sometimes, low quality cells may erroneously map to the orthochromatic erythroblast region as this cell type has very low transcriptional diversity. 
 These low quality query cells do not have hemoglobin expression and are in fact mis-mapped; they will be flagged by the QC filter and excluded from cell type assignments.
 
-**Please adjust the MAD.threshold (typically between 1 and 3) based on the distribution of your dataset to identify the outliers with low quality and high mapping error scores. This will improve your classifications and any downstream composition analysis**
+**Please adjust the MAD_threshold (typically between 1 and 3) based on the distribution of your dataset to identify the outliers with low quality and high mapping error scores. This will improve your classifications and any downstream composition analysis**
 
 ```{r}
 # # Optional step - remove outliers with high mapping error
@@ -137,7 +149,7 @@ This label transfer step will take longer, potentially around 10 minutes for ~10
 query <- predict_CellTypes(
   query_obj = query, 
   ref_obj = ref, 
-  initial_label = 'initial_CellType', # celltype assignments before mapping QC
+  initial_label = 'initial_CellType', # celltype assignments before filtering on mapping QC
   final_label = 'predicted_CellType'  # celltype assignments with map QC failing cells assigned as NA
 ) 
 
@@ -155,13 +167,14 @@ Since our Pseudotime KNN assignments are performed in UMAP space (more accurate 
 query <- predict_Pseudotime(
   query_obj = query, 
   ref_obj = ref, 
-  initial_label = 'initial_Pseudotime', 
-  final_label = 'predicted_Pseudotime'
+  initial_label = 'initial_Pseudotime',  # pseudotime assignments before filtering on mapping QC
+  final_label = 'predicted_Pseudotime'   # pseudotime assignments with map QC failing cells assigned as NA
 )
 
 # Visualize Hematopoietic Pseudotime in query data
 FeaturePlot(subset(query, mapping_error_QC == 'Pass'), features = c('predicted_Pseudotime'))
 ```
+
 
 ### Save projection results
 
@@ -199,8 +212,8 @@ projection_plots <- plot_Projection_byDonor(
   save_folder = 'projectionFigures/'
 )
 
-# show plots together with patchwork
-patchwork::wrap_plots(projection_plots)
+# show plots together with patchwork. Can also just call "projection_plots" object to display one-by-one
+patchwork::wrap_plots(projection_plots, ncol = 2)
 ```
 
 We can also set Hierarchy_only = TRUE to remove T/NK/Plasma/Stromal cells and focus solely on the hematopoietic hierarchy.
@@ -222,13 +235,15 @@ projection_plots <- plot_Projection_byDonor(
   save_folder = 'projectionFigures/'
 )
 
-# show plots together with patchwork
-patchwork::wrap_plots(projection_plots)
+# show plots together with patchwork. Can also just call "projection_plots" object to display one-by-one
+patchwork::wrap_plots(projection_plots, ncol = 2)
 ```
 
 Note how cell composition differs between CD34p sorted Adult Bone Marrow and Fetal Bone Marrow within the Roy 2021 dataset. 
 Notably, Adult bone marrow is enriched for more early HSC/MPP and LMPP cells and also MEP & Early Erythroid lineages. 
 In contrast, Fetal bone marrow is highly enriched for MLP and B cell progenitors. 
+
+We can also compare the mapping of these samples along Hematopoietic pseudotime:
 
 
 ### Get Composition data for each donor
@@ -277,9 +292,6 @@ query_composition <- get_Composition(
 query_composition 
 ```
 
-```{r}
-query_composition
-```
 
 ```{r}
 # Simple heatmap to visualize composition of projected samples
