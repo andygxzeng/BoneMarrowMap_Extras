@@ -21,14 +21,17 @@ Install package from github
 
 ```{r}
 ## install dependencies that are not on CRAN
-#BiocManager::install("AUCell")
-#devtools::install_github("jaredhuling/jcolors", force = TRUE) # dependency that is no longer on CRAN
-
+if(!require(BiocManager, quietly = TRUE)) install.packages("BiocManager")
+BiocManager::install(c("AUCell", "doMC"))
+if(!require(devtools, quietly = TRUE)) install.packages("devtools")
+devtools::install_github("jaredhuling/jcolors")
+```
+ 
+```{r}
 ## install BoneMarrowMap package
-#devtools::install_github('andygxzeng/BoneMarrowMap', force = TRUE)
+devtools::install_github('andygxzeng/BoneMarrowMap', force = TRUE)
 library(BoneMarrowMap)
 ```
-
 
 #### Download reference object and UMAP model
 
@@ -106,7 +109,7 @@ Calculate mapping error and perform QC to remove low quality cells with high map
 batchvar <- 'Patient'
 
 # Map query dataset using Symphony (Kang et al 2021)
-query <- map_Query(
+query <- map_Query_custom(
     exp_query = query@assays$RNA@counts, 
     metadata_query = query@meta.data,
     ref_obj = ref,

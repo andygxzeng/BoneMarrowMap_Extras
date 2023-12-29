@@ -22,14 +22,18 @@ Install package from github
 
 ```{r}
 ## install dependencies that are not on CRAN
-#BiocManager::install("AUCell")
-#devtools::install_github("jaredhuling/jcolors") 
-
-## install BoneMarrowMap package
-#devtools::install_github('andygxzeng/BoneMarrowMap', force = TRUE)
-library(BoneMarrowMap)
+if(!require(BiocManager, quietly = TRUE)) install.packages("BiocManager")
+BiocManager::install(c("AUCell", "doMC"))
+if(!require(devtools, quietly = TRUE)) install.packages("devtools")
+devtools::install_github("jaredhuling/jcolors")
 ```
  
+```{r}
+## install BoneMarrowMap package
+devtools::install_github('andygxzeng/BoneMarrowMap', force = TRUE)
+library(BoneMarrowMap)
+```
+
  
 #### Download reference object and UMAP model
 
