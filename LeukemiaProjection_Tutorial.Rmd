@@ -1,5 +1,5 @@
 ---
-title: "Leukemia Projections"
+title: "Leukemia Projection Tutorial"
 output: html_notebook
 ---
 
@@ -19,7 +19,7 @@ library(RColorBrewer)
 
 Install package from github
 
-```{r}
+```{r, eval=FALSE}
 ## install dependencies that are not on CRAN
 if(!require(BiocManager, quietly = TRUE)) install.packages("BiocManager")
 BiocManager::install(c("AUCell", "doMC"))
@@ -27,9 +27,12 @@ if(!require(devtools, quietly = TRUE)) install.packages("devtools")
 devtools::install_github("jaredhuling/jcolors")
 ```
  
-```{r}
+```{r, eval=FALSE}
 ## install BoneMarrowMap package
 devtools::install_github('andygxzeng/BoneMarrowMap', force = TRUE)
+```
+
+```{r}
 library(BoneMarrowMap)
 ```
 
@@ -37,21 +40,25 @@ library(BoneMarrowMap)
 
 Set projection folder, Download reference object and UMAP model
 
-```{r}
+```{r, eval=FALSE}
 # Set directory to store projection reference files
 projection_path = './'
 
 # Download Bone Marrow Reference - 344 Mb
-curl::curl_download('https://bonemarrowmap.s3.us-east-2.amazonaws.com/BoneMarrow_RefMap_SymphonyRef.rds', 
-                    destfile = paste0(projection_path, 'BoneMarrow_RefMap_SymphonyRef.rds'))
+curl::curl_download('https://bonemarrowmap.s3.us-east-2.amazonaws.com/BoneMarrowMap_SymphonyReference.rds', 
+                    destfile = paste0(projection_path, 'BoneMarrowMap_SymphonyReference.rds'))
 # Download uwot model file - 221 Mb
-curl::curl_download('https://bonemarrowmap.s3.us-east-2.amazonaws.com/BoneMarrow_RefMap_uwot_model.uwot', 
-                    destfile = paste0(projection_path, 'BoneMarrow_RefMap_uwot_model.uwot'))
+curl::curl_download('https://bonemarrowmap.s3.us-east-2.amazonaws.com/BoneMarrowMap_uwot_model.uwot', 
+                    destfile = paste0(projection_path, 'BoneMarrowMap_uwot_model.uwot'))
+```
 
+
+```{r}
+projection_path = './'
 # Load Symphony reference
-ref <- readRDS(paste0(projection_path, 'BoneMarrow_RefMap_SymphonyRef.rds'))
+ref <- readRDS(paste0(projection_path, 'BoneMarrowMap_SymphonyReference.rds'))
 # Set uwot path for UMAP projection
-ref$save_uwot_path <- paste0(projection_path, 'BoneMarrow_RefMap_uwot_model.uwot')
+ref$save_uwot_path <- paste0(projection_path, 'BoneMarrowMap_uwot_model.uwot')
 ```
 
 
@@ -64,6 +71,12 @@ This will be memory efficient as it will not include gene expression counts, onl
 ReferenceSeuratObj <- create_ReferenceObject(ref)
 
 DimPlot(ReferenceSeuratObj, reduction = 'umap', group.by = 'CellType_Annotation_formatted', 
+        raster=FALSE, label=TRUE, label.size = 4)
+```
+We can also visualize broader cell type labels which may simplify interpretation and downstream analysis. 
+
+```{r, fig.height=5, fig.width=11}
+DimPlot(ReferenceSeuratObj, reduction = 'umap', group.by = 'CellType_Broad', 
         raster=FALSE, label=TRUE, label.size = 4)
 ```
 
@@ -91,10 +104,13 @@ As an example here, we are going to project scRNA-seq data from three diverse AM
 
 Each patient sample was downsampled to 2500 cells to decrease runtime for this example. 
 
-```{r}
+```{r, eval=FALSE}
 curl::curl_download('https://bonemarrowmap.s3.us-east-2.amazonaws.com/ExampleQuery_AML_scRNAseq.rds', 
                     destfile = paste0(projection_path, 'ExampleQuery_AML_scRNAseq.rds'))
+```
 
+
+```{r}
 query <- readRDS('ExampleQuery_AML_scRNAseq.rds')
 query
 ```
@@ -109,13 +125,14 @@ Calculate mapping error and perform QC to remove low quality cells with high map
 batchvar <- 'Patient'
 
 # Map query dataset using Symphony (Kang et al 2021)
-query <- map_Query_custom(
+query <- map_Query(
     exp_query = query@assays$RNA@counts, 
     metadata_query = query@meta.data,
     ref_obj = ref,
     vars = batchvar
 )
 ```
+
 In leukemia samples, the distribution of mapping error scores can vary broadly from sample to sample. In this context, we will want to threshold outliers with high mapping error on a per-sample basis. Typically, a threshold of 2, 2.5, or 3 MADs works well. 
 
 In some cases where sequencing depth is very low (e.g. older datasets from first-generation scRNA-seq protocols), a more stringent threshold of even 1.5 may be warranted to eliminate cells with low mapping quality 
@@ -130,7 +147,6 @@ query@meta.data %>%
   ggplot(aes(x = mapping_error_score, fill = mapping_error_QC)) + 
   geom_histogram(bins = 200) + facet_wrap(.~get(batchvar))
 ```
-
 
 ```{r, fig.height=3, fig.width=10}
 # Get QC Plots
@@ -163,6 +179,7 @@ For ease of integrating these mapped annotations with the rest of your analysis,
 
 ### Cell Type Assignments
 We will next use a KNN classifier to assign cell identity based on the 30 K-Nearest Neighbours from the reference map.
+Broader cell type labels will also be transferred automatically along with the precise cell type labels. 
 This label transfer step will take longer, potentially around 10 minutes for ~10,000 cells 
 
 ```{r, fig.height=5, fig.width=10}
@@ -174,7 +191,15 @@ query <- predict_CellTypes(
   final_label = 'predicted_CellType'  # celltype assignments with map QC failing cells assigned as NA
 ) 
 
-DimPlot(subset(query, mapping_error_QC == 'Pass'), reduction = 'umap', group.by = c('predicted_CellType'), 
+DimPlot(subset(query, mapping_error_QC == 'Pass'), reduction = 'umap_projected', group.by = c('predicted_CellType'), 
+        raster=FALSE, label=TRUE, label.size = 4)
+```
+
+We can also visualize the broader cell type categories in case precise labels are too granular. 
+These provide a simpler view of the data and can help guide cluster annotations if your dataset does not have many cells. 
+
+```{r, fig.height=5, fig.width=10}
+DimPlot(subset(query, mapping_error_QC == 'Pass'), reduction = 'umap_projected', group.by = c('predicted_CellType_Broad'), 
         raster=FALSE, label=TRUE, label.size = 4)
 ```
 
@@ -197,6 +222,7 @@ query <- predict_Pseudotime(
 FeaturePlot(subset(query, mapping_error_QC == 'Pass'), features = c('predicted_Pseudotime'), split.by = 'Patient') & 
   scale_color_gradientn(colors = rev(brewer.pal(11, 'RdBu')))
 ```
+
 
 ### Visualize Projection Density
 
@@ -312,9 +338,9 @@ Here we will load genesets derived from functional studies of LSC+ and LSC- frac
 Further, we will load additional genesets derived from marker genes of leukemia cell populations defined in van Galen et al Cell 2019 and Zeng et al Nature Medicine 2022. Notably, the LSPC-Quiescent population is highly associated with functional LSCs and relapse by deconvolution (Zeng 2022).
 
 ```{r}
-curl::curl_download('https://raw.githubusercontent.com/andygxzeng/BoneMarrowMap_Extras/main/AML_CellType_Genesets.gmt', 
-                    destfile = paste0(projection_path, 'AML_CellType_Genesets.gmt'))
-AMLgenesets <- load_Genesets_gmt('AML_CellType_Genesets.gmt')
+curl::curl_download('https://raw.githubusercontent.com/andygxzeng/BoneMarrowMap_Extras/main/scAML_Differentiation_Stage_MarkerGenes.gmt', 
+                    destfile = paste0(projection_path, 'scAML_Differentiation_Stage_MarkerGenes.gmt'))
+AMLgenesets <- load_Genesets_gmt('scAML_Differentiation_Stage_MarkerGenes.gmt')
 AMLgenesets %>% summary()
 ```
 
@@ -325,11 +351,11 @@ query <- score_Genesets_AUCell(query, genesets = AMLgenesets, nbatches = 1, ncor
 query@meta.data
 ```
 
-Using genes associated with functional LSC+ engraftment capacity (LSC104_Ng2016_UP) together with the LSPC-Quiescent signature help us to identify candidate LSCs within the data. 
+Using genes associated with functional LSC+ engraftment capacity (LSC_vs_Blast_UP__Ng2016_AUC) along with the LSPC-Quiescent signature help us to identify candidate LSCs within the data. 
 
 ```{r, fig.height=6, fig.width=12}
 FeaturePlot(subset(query, mapping_error_QC == 'Pass'), 
-            features = c('LSPC_Quiescent_AUC', 'LSC104_Ng2016_UP_AUC'), 
+            features = c('LSPC_Quiescent__Zeng2022_AUC', 'LSC_vs_Blast_UP__Ng2016_AUC'), 
             split.by = 'Patient', max.cutoff = 'q99', min.cutoff = 'q5') & 
   scale_color_gradientn(colors = rev(brewer.pal(11, 'RdBu')))
 ```
@@ -338,7 +364,7 @@ It is no surprise that these are the most primitive cells earliest in Pseudotime
 
 ```{r, fig.height=3, fig.width=12}
 FeaturePlot(subset(query, mapping_error_QC == 'Pass'), 
-            features = c('MLL_LSC_Somervaille2009_UP_AUC'), 
+            features = c('MLL_LSC_UP__Somervaille2009_AUC'), 
             split.by = 'Patient', max.cutoff = 'q99', min.cutoff = 'q5') & 
   scale_color_gradientn(colors = rev(brewer.pal(11, 'RdBu')))
 ```
@@ -368,13 +394,54 @@ For downstream analysis, you can use the projected celltype labels to help annot
 
 Additional information from pseudotime projection and scoring of LSC-specific signatures can help identify candidate LSCs within the data. 
 
+For downstream analysis, let's take the example of pt30886, with involvement of HSCs and multiple trajectories spanning Myeloid, Erythroid, and pDC differentiation:
+
+```{r, fig.height=3, fig.width=12}
+pt30886 <- query %>%
+  subset(., Patient == 'pt_30886') %>% 
+  SCTransform() %>% 
+  RunPCA() %>% 
+  RunUMAP(reduction = 'pca', dims=1:20) %>%
+  FindNeighbors(reduction = 'pca', dims = 1:20) %>% 
+  FindClusters(resolution = 1, algorithm = 3)
+```
+
+```{r, fig.height=3, fig.width=12}
+DimPlot(pt30886, reduction = 'umap', group.by=c('seurat_clusters', 'predicted_CellType_Broad'), label = T)
+```
+
+```{r, fig.height=3, fig.width=13}
+FeaturePlot(pt30886, 
+            features = c('LSPC_Quiescent__Zeng2022_AUC', 'LSC_vs_Blast_UP__Ng2016_AUC', 'HSC_MPP_like__Top100_scAML_AUC'), 
+            max.cutoff = 'q99', min.cutoff = 'q5', ncol = 3) & 
+  scale_color_gradientn(colors = rev(brewer.pal(11, 'RdBu')))
+```
+
+Based on this we can see multiple transcriptional clusters within the data, including some non-leukemic clusters of T cells, B cells, and Plasma cells. 
+Cluster 3 contains HSC/MPP-like cells most enriched for LSC signatures. 
+
+Let's see what each cluster looks like when projected onto BoneMarrowMap:
+
+```{r, fig.height=3, fig.width=9}
+DimPlot(pt30886, reduction = 'umap_projected', group.by=c('seurat_clusters', 'predicted_CellType_Broad'), label = T)
+```
+
+```{r}
+pt30886@meta.data %>% 
+  # compare clusters against broad cell types assignments 
+  group_by(predicted_CellType_Broad, seurat_clusters) %>% 
+  summarise(count = n()) %>% ungroup() %>% 
+  # get proportions of cells within each cluster assigned as a certain celltype 
+  group_by(seurat_clusters) %>% mutate(prop = count / sum(count)) %>% 
+  pivot_wider(id_cols = 'predicted_CellType_Broad', names_from = 'seurat_clusters', values_from = 'prop') %>% 
+  # fill in zeros and format for heatmap 
+  replace(is.na(.), 0) %>% column_to_rownames('predicted_CellType_Broad') %>% 
+  # create a basic heatmap to visualize cell types vs clusters
+  pheatmap::pheatmap()
+```
+
+This illustrates how annotations from BoneMarrowMap can allow us to analyze clusters of leukemic cells identified from unsupervised analysis. 
+As shown in the heatmap above, each cluster from this patient actually corresponds to a distinct state along the hematopoietic hierarchy, with multiple clusters corresponding to erythroid progenitors. Overlaying copy number alteration calls from inferCNV or expressed mutations can help us identify the differentiation patterns of distinct subclones within this patient. 
+
+
 Finally, for cohorts with many patients composition analysis can be performed to understand how leukemia cell hierarchies vary with patient characteristics and therapy response / relapse. I hope this tutorial was useful and feel free to comment with any questions you may have around projection of leukemia cells or downstream analysis.
-
-
-
-
-
-
-
-
-
